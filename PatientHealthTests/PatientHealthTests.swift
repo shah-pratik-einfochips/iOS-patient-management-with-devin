@@ -216,6 +216,61 @@ final class PatientHealthTests: XCTestCase {
         XCTAssertEqual(store.patients.count, 1)
     }
 
+    @MainActor func testStoreDeletesPatientAndReading() throws {
+        let container = try ModelContainer(for: EncryptedPatientRecord.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let key = SymmetricKey(size: .bits256)
+        let store = try PatientStore(container: container, key: key)
+        let value = patient()
+        try store.save(value)
+        try store.addReading(VitalReading(values: [.heartRate: 70]), to: value.id)
+        let readingID = try XCTUnwrap(store.patients.first?.vitals.first?.id)
+        try store.deleteReading(readingID, from: value.id)
+        XCTAssertTrue(store.patients.first?.vitals.isEmpty ?? false)
+        try store.deletePatient(value.id)
+        XCTAssertTrue(store.patients.isEmpty)
+        let reloaded = try PatientStore(container: container, key: key)
+        XCTAssertTrue(reloaded.patients.isEmpty)
+    }
+
+    @MainActor func testStoreDeleteOfUnknownPatientIsNoOp() throws {
+        let container = try ModelContainer(for: EncryptedPatientRecord.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let store = try PatientStore(container: container, key: SymmetricKey(size: .bits256))
+        try store.save(patient())
+        try store.deletePatient(UUID())
+        XCTAssertEqual(store.patients.count, 1)
+    }
+
+    func testExportCsvQuotesCommasAndMarksOutOfRange() throws {
+        var value = patient()
+        value.vitals = [VitalReading(values: [.heartRate: 70, .oxygenSaturation: 90], symptoms: "note, with comma")]
+        let csv = PatientExport.csv(value)
+        XCTAssertTrue(csv.contains("\"note, with comma\""))
+        XCTAssertTrue(csv.contains("reading_date,metric,value,unit"))
+        XCTAssertTrue(csv.contains("yes"))
+        for line in csv.components(separatedBy: "\n") where !line.isEmpty {
+            XCTAssertGreaterThanOrEqual(line.components(separatedBy: ",").count, 5, line)
+        }
+    }
+
+    func testExportFilesAreWritten() throws {
+        let value = patient()
+        let csv = try PatientExport.csvURL(value)
+        let pdf = try PatientExport.pdfURL(value)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: csv.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pdf.path))
+        XCTAssertTrue(try String(contentsOf: csv, encoding: .utf8).contains("SYNTHETIC-001"))
+        let header = try Data(contentsOf: pdf).prefix(4)
+        XCTAssertEqual(String(decoding: header, as: UTF8.self), "%PDF")
+    }
+
+    func testExportFilenamesEscapeMedicalID() throws {
+        var value = patient()
+        value.medicalID = "PT/2024/001"
+        let csv = try PatientExport.csvURL(value)
+        XCTAssertFalse(csv.lastPathComponent.contains("/"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: csv.path))
+    }
+
     @MainActor func testStoreRejectsInvalidData() throws {
         let container = try ModelContainer(for: EncryptedPatientRecord.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let store = try PatientStore(container: container, key: SymmetricKey(size: .bits256))

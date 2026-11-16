@@ -25,6 +25,43 @@ final class PatientHealthUITests: XCTestCase {
         app.buttons["Cancel"].tap()
     }
 
+    func testDeletePatientRemovesProfile() {
+        let app = openPatientForm()
+        let firstName = app.textFields["First name"]
+        firstName.tap()
+        firstName.typeText("Delete")
+        let lastName = app.textFields["Last name"]
+        lastName.tap()
+        lastName.typeText("Me")
+        let medicalID = app.textFields["Medical ID"]
+        medicalID.tap()
+        medicalID.typeText("DELETE-UI-001")
+        app.buttons["birthDateButton"].tap()
+        let useDate = app.buttons["Use date"]
+        if !useDate.waitForExistence(timeout: 2) {
+            app.buttons["birthDateButton"].tap()
+        }
+        useDate.tap()
+        let consent = app.switches["Consent to local profile storage"]
+        for _ in 0..<8 {
+            if consent.isHittable { break }
+            app.swipeUp()
+        }
+        consent.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
+        let save = app.buttons["Save"]
+        XCTAssertTrue(save.isEnabled)
+        save.tap()
+        let row = app.staticTexts["Delete Me"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.tap()
+        let more = app.buttons["More"]
+        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        more.tap()
+        app.buttons["Delete patient"].tap()
+        app.buttons["Delete"].firstMatch.tap()
+        XCTAssertFalse(row.waitForExistence(timeout: 3))
+    }
+
     func testExaminationMenuContainsExpectedOptions() {
         let app = openPatientForm()
         let picker = app.buttons["examinationTypePicker"]
