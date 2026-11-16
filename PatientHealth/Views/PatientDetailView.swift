@@ -4,11 +4,15 @@ import SwiftUI
 struct PatientDetailView: View {
     let store: PatientStore
     let patientID: UUID
+    @Environment(\.dismiss) private var dismiss
     @State private var editingPatient = false
     @State private var addingVitals = false
     @State private var metric: VitalMetric = .heartRate
     @State private var showChart = true
     @State private var selectedDate: Date?
+    @State private var deletingPatient = false
+    @State private var shareURL: URL?
+    @State private var errorMessage: String?
 
     private var patient: Patient? { store.patients.first { $0.id == patientID } }
 
@@ -105,16 +109,51 @@ struct PatientDetailView: View {
                             if let map = reading.meanArterialPressure { LabeledContent("MAP", value: "\(map.formatted()) mmHg") }
                             if !reading.symptoms.isEmpty { Text(reading.symptoms) }
                         }
+                        .swipeActions {
+                            Button("Delete", role: .destructive) {
+                                do {
+                                    try store.deleteReading(reading.id, from: patient.id)
+                                } catch { errorMessage = "Unable to delete the reading. Please retry." }
+                            }
+                        }
                     }
                 }
             }
             .navigationTitle(patient.name)
-            .toolbar { Button("Add vitals", systemImage: "plus") { addingVitals = true } }
+            .toolbar {
+                Button("Add vitals", systemImage: "plus") { addingVitals = true }
+                Menu("More", systemImage: "ellipsis") {
+                    Button("Export CSV") { export(patient, pdf: false) }
+                    Button("Export PDF") { export(patient, pdf: true) }
+                    Button("Delete patient", role: .destructive) { deletingPatient = true }
+                }
+            }
+            .confirmationDialog("Delete \(patient.name) and all recorded vitals?", isPresented: $deletingPatient, titleVisibility: .visible) {
+                Button("Delete", role: .destructive) {
+                    do {
+                        try store.deletePatient(patient.id)
+                        dismiss()
+                    } catch { errorMessage = "Unable to delete the patient. Please retry." }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
             .sheet(isPresented: $editingPatient) { PatientFormView(store: store, patient: patient) }
             .sheet(isPresented: $addingVitals) { VitalsFormView(store: store, patient: patient) }
+            .sheet(isPresented: Binding(get: { shareURL != nil }, set: { if !$0 { shareURL = nil } })) {
+                if let shareURL { ShareSheet(items: [shareURL]) }
+            }
+            .alert("Unable to complete", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+                Button("OK", role: .cancel) { errorMessage = nil }
+            } message: { Text(errorMessage ?? "") }
         } else {
             ContentUnavailableView("Patient unavailable", systemImage: "person.crop.circle.badge.questionmark")
         }
+    }
+
+    private func export(_ patient: Patient, pdf: Bool) {
+        do {
+            shareURL = pdf ? try PatientExport.pdfURL(patient) : try PatientExport.csvURL(patient)
+        } catch { errorMessage = "The export could not be created. Please retry." }
     }
 
     private func recentReadings(_ patient: Patient) -> [VitalReading] {

@@ -131,7 +131,11 @@ struct PatientFormView: View {
                         do {
                             try store.save(patient)
                             dismiss()
-                        } catch { errorMessage = error.localizedDescription }
+                        } catch let error as StorageError {
+                            errorMessage = error.errorDescription
+                        } catch {
+                            errorMessage = "Unable to save securely. Please retry."
+                        }
                     }.disabled(!errors.isEmpty)
                 }
             }
