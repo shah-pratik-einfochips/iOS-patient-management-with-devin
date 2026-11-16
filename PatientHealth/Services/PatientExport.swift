@@ -13,7 +13,7 @@ enum PatientExport {
             for (index, metric) in rows.enumerated() {
                 let value = metric.flatMap { reading.values[$0] }
                 lines.append([
-                    reading.date.formatted(date: .numeric, time: .shortened),
+                    quote(reading.date.formatted(date: .numeric, time: .shortened)),
                     metric?.title ?? "",
                     value.map(format) ?? "",
                     metric?.unit ?? "",
@@ -34,8 +34,14 @@ enum PatientExport {
         value.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(value)) : String(format: "%.1f", value)
     }
 
+    private static func fileStem(_ patient: Patient) -> String {
+        let raw = patient.medicalID.isEmpty ? patient.id.uuidString : patient.medicalID
+        let cleaned = raw.replacingOccurrences(of: "[^A-Za-z0-9._-]", with: "-", options: .regularExpression)
+        return String(cleaned.prefix(24))
+    }
+
     static func csvURL(_ patient: Patient) throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("patient-\(patient.medicalID.isEmpty ? patient.id.uuidString : patient.medicalID).csv")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("patient-\(fileStem(patient)).csv")
         try csv(patient).write(to: url, atomically: true, encoding: .utf8)
         return url
     }
@@ -58,8 +64,19 @@ enum PatientExport {
                 }
             }
             func draw(_ text: String, _ attributes: [NSAttributedString.Key: Any]? = nil) {
-                (text as NSString).draw(at: CGPoint(x: margin, y: y), withAttributes: attributes ?? body)
-                advance()
+                let attrs = attributes ?? body
+                let width = pageRect.width - margin * 2
+                let bounds = (text as NSString).boundingRect(
+                    with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                    options: [.usesLineFragmentOrigin], attributes: attrs, context: nil)
+                if y + bounds.height > pageRect.height - margin {
+                    context.beginPage()
+                    y = margin
+                }
+                (text as NSString).draw(
+                    with: CGRect(x: margin, y: y, width: width, height: bounds.height),
+                    options: [.usesLineFragmentOrigin], attributes: attrs, context: nil)
+                y += bounds.height + 4
             }
             context.beginPage()
             draw("\(patient.name) (\(patient.medicalID))", title); advance()
@@ -84,7 +101,7 @@ enum PatientExport {
                 if !reading.symptoms.isEmpty { draw("  Symptoms: \(reading.symptoms)") }
             }
         }
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("patient-\(patient.medicalID.isEmpty ? patient.id.uuidString : patient.medicalID).pdf")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("patient-\(fileStem(patient)).pdf")
         try data.write(to: url, options: .atomic)
         return url
     }
