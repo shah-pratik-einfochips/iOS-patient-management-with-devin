@@ -124,4 +124,22 @@ final class PatientStore {
         patient.vitals.append(reading)
         try save(patient)
     }
+
+    func deletePatient(_ patientID: UUID) throws {
+        let request = FetchDescriptor<EncryptedPatientRecord>(predicate: #Predicate { $0.id == patientID })
+        do {
+            for record in try context.fetch(request) { context.delete(record) }
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
+        patients.removeAll { $0.id == patientID }
+    }
+
+    func deleteReading(_ readingID: UUID, from patientID: UUID) throws {
+        guard var patient = patients.first(where: { $0.id == patientID }) else { throw StorageError.invalidProfile }
+        patient.vitals.removeAll { $0.id == readingID }
+        try save(patient)
+    }
 }

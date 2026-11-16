@@ -98,7 +98,11 @@ struct VitalsFormView: View {
                         do {
                             try store.addReading(reading, to: patient.id)
                             dismiss()
-                        } catch { errorMessage = error.localizedDescription }
+                        } catch let error as StorageError {
+                            errorMessage = error.errorDescription
+                        } catch {
+                            errorMessage = "Unable to save securely. Please retry."
+                        }
                     }.disabled(!errors.isEmpty)
                 }
             }
